@@ -3,7 +3,7 @@
 # @Author: Joscha Schmiedt
 # @Date:   2019-02-04 14:45:08
 # @Last Modified by:   Joscha Schmiedt
-# @Last Modified time: 2019-02-05 12:59:22
+# @Last Modified time: 2019-02-05 13:07:59
 #
 # merge_sev.py - Merge separate SEV files into one headerless DAT file
 #
@@ -72,6 +72,15 @@ def get_filenames():
     return askopenfilenames(filetypes=(("sev files","*.sev"),("all files","*.*")))
 
 
+def md5sum(filename):
+    from hashlib import md5
+    hash = md5()
+    with open(filename, "rb") as f:
+        for chunk in iter(lambda: f.read(128 * hash.block_size), b""):
+            hash.update(chunk)
+    return hash.hexdigest()
+
+
 
 if __name__ == "__main__":
 
@@ -129,7 +138,8 @@ if __name__ == "__main__":
         "dtype": headers[0]["dForm"], 
         "numberOfChannels": len(basenames),
         "mergedBy": getuser(),
-        "mergeTime": str(datetime.datetime.now())
+        "mergeTime": str(datetime.datetime.now()),
+        "md5sum": md5sum(targetFile)
     }
     jsonFile = os.path.join(datadir, sharedBasename[0] + '.json')
     print('Writing info file to {0}...'.format(jsonFile))
