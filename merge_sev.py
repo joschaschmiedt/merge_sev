@@ -3,10 +3,15 @@
 # @Author: Joscha Schmiedt
 # @Date:   2019-02-04 14:45:08
 # @Last Modified by:   Joscha Schmiedt
-# @Last Modified time: 2019-02-04 14:48:04
+# @Last Modified time: 2019-02-05 11:48:45
 #
 # merge_sev.py - Merge separate SEV files into one headerless DAT file
 #
+#
+# TODO  
+# * Currently all channels are loaded into memory. This doesn't work fo
+#   arbitrary data lengths and will be enhanced in a later version
+
 
 from __future__ import division, print_function
 
@@ -76,7 +81,12 @@ if __name__ == "__main__":
     parser.add_argument("-n", "--natural-sort",
                         action="store_true", default=True,
                         help="Sort channels using natural sorting (default: True)")
-    
+    parser.add_argument("-m", "--remove-median",
+                        action="store_true", default=True,
+                        help="Subtract median offset of each channel (default: True)")
+
+
+
     # Parse CL-arguments - abort if things get wonky
     args = parser.parse_args()
 
@@ -101,10 +111,13 @@ if __name__ == "__main__":
     targetFile = os.path.join(datadir, sharedBasename[0] + '.dat')
     print("Loading {0} files".format(len(files)))
     data = np.vstack([read_data(f) for f in files])
-    
+
+    if args.remove_median:
+        data -= np.median(data, axis=1, keepdims=True).astype(data.dtype)
+
     print("Writing data to {0}".format(targetFile))
     with open(targetFile, 'wb') as fid:
-        data.tofile(fid)
+        data.T.tofile(fid)
     del data
 
     # write info file
