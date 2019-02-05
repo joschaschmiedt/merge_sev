@@ -3,7 +3,7 @@
 # @Author: Joscha Schmiedt
 # @Date:   2019-02-04 14:45:08
 # @Last Modified by:   Joscha Schmiedt
-# @Last Modified time: 2019-02-05 11:48:45
+# @Last Modified time: 2019-02-05 12:59:22
 #
 # merge_sev.py - Merge separate SEV files into one headerless DAT file
 #
@@ -21,7 +21,8 @@ import argparse
 import os
 from sys import exit
 import json
-
+from getpass import getuser
+import datetime
 
 HEADERSIZE = 40; # bytes
 ALLOWED_FORMATS = ('single','int32','int16','int8','double','int64')
@@ -78,12 +79,12 @@ if __name__ == "__main__":
     desc = "Merge multiple SEV files into one headerless DAT file"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('files', type=str, nargs='*')
-    parser.add_argument("-n", "--natural-sort",
-                        action="store_true", default=True,
-                        help="Sort channels using natural sorting (default: True)")
+    parser.add_argument("-n", "--no-natural-sort",
+                        action="store_true", default=False,
+                        help="Do not sort channels using natural sorting (default: False)")
     parser.add_argument("-m", "--remove-median",
-                        action="store_true", default=True,
-                        help="Subtract median offset of each channel (default: True)")
+                        action="store_true", default=False,
+                        help="Subtract median offset of each channel (default: False)")
 
 
 
@@ -98,7 +99,7 @@ if __name__ == "__main__":
         files = args.files
 
     files = [os.path.abspath(x) for x in files]    
-    if args.natural_sort:
+    if not args.no_natural_sort:
         files = natural_sort(files)
     
     datadir = os.path.dirname(files[0])
@@ -109,13 +110,13 @@ if __name__ == "__main__":
         raise Exception("Not all basenames are the same")
    
     targetFile = os.path.join(datadir, sharedBasename[0] + '.dat')
-    print("Loading {0} files".format(len(files)))
+    print("Loading {0} files...".format(len(files)))
     data = np.vstack([read_data(f) for f in files])
 
     if args.remove_median:
         data -= np.median(data, axis=1, keepdims=True).astype(data.dtype)
 
-    print("Writing data to {0}".format(targetFile))
+    print("Writing data to {0}...".format(targetFile))
     with open(targetFile, 'wb') as fid:
         data.T.tofile(fid)
     del data
@@ -126,11 +127,15 @@ if __name__ == "__main__":
         "originalFiles": basenames,
         "samplingRate": headers[0]["Fs"],
         "dtype": headers[0]["dForm"], 
-        "numberOfChannels": len(basenames)
+        "numberOfChannels": len(basenames),
+        "mergedBy": getuser(),
+        "mergeTime": str(datetime.datetime.now())
     }
     jsonFile = os.path.join(datadir, sharedBasename[0] + '.json')
+    print('Writing info file to {0}...'.format(jsonFile))
     with open(jsonFile, 'w') as fid:
         json.dump(info, fid, indent=4)
+    print("")
 
 
 
