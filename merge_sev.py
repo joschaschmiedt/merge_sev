@@ -3,7 +3,7 @@
 # @Author: Joscha Schmiedt
 # @Date:   2019-02-04 14:45:08
 # @Last Modified by:   Joscha Schmiedt
-# @Last Modified time: 2019-02-11 11:53:22
+# @Last Modified time: 2019-02-11 11:58:47
 #
 # merge_sev.py - Merge separate SEV files into one headerless DAT file
 #
@@ -96,7 +96,7 @@ if __name__ == "__main__":
                         help="Do not sort channels using natural sorting (default: False)")
     parser.add_argument("-m", "--remove-median",
                         action="store_true", default=True,
-                        help="Subtract median offset of each channel (default: False)")
+                        help="Subtract median offset of each channel (default: True)")
 
 
 
