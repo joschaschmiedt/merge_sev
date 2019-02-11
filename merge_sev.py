@@ -3,7 +3,7 @@
 # @Author: Joscha Schmiedt
 # @Date:   2019-02-04 14:45:08
 # @Last Modified by:   Joscha Schmiedt
-# @Last Modified time: 2019-02-05 13:07:59
+# @Last Modified time: 2019-02-11 11:53:22
 #
 # merge_sev.py - Merge separate SEV files into one headerless DAT file
 #
@@ -23,6 +23,7 @@ from sys import exit
 import json
 from getpass import getuser
 import datetime
+from tqdm import tqdm
 
 HEADERSIZE = 40; # bytes
 ALLOWED_FORMATS = ('single','int32','int16','int8','double','int64')
@@ -80,6 +81,8 @@ def md5sum(filename):
             hash.update(chunk)
     return hash.hexdigest()
 
+def all_elements_equal(elements):
+    return all(elem == elements[0] for elem in elements)
 
 
 if __name__ == "__main__":
@@ -92,7 +95,7 @@ if __name__ == "__main__":
                         action="store_true", default=False,
                         help="Do not sort channels using natural sorting (default: False)")
     parser.add_argument("-m", "--remove-median",
-                        action="store_true", default=False,
+                        action="store_true", default=True,
                         help="Subtract median offset of each channel (default: False)")
 
 
@@ -114,24 +117,31 @@ if __name__ == "__main__":
     datadir = os.path.dirname(files[0])
     basenames = [os.path.basename(x) for x in files]
     sharedBasename = [x[:re.search("_[Cc]h.*\.sev", x).start()] for x in basenames]
-    allSame = all(elem == sharedBasename[0] for elem in sharedBasename)
-    if not allSame:
-        raise Exception("Not all basenames are the same")
+    if not all_elements_equal(sharedBasename):
+        raise ValueError("Not all basenames are the same")
+
+    if not all_elements_equal([os.path.getsize(f) for f in files]):
+        raise ValueError('Not all files have same size')
    
-    targetFile = os.path.join(datadir, sharedBasename[0] + '.dat')
-    print("Loading {0} files...".format(len(files)))
-    data = np.vstack([read_data(f) for f in files])
+    headers = [read_header(f) for f in files]
 
-    if args.remove_median:
-        data -= np.median(data, axis=1, keepdims=True).astype(data.dtype)
+    targetFilename = os.path.join(datadir, sharedBasename[0] + '.dat')
+    print("Merging {0} files...".format(len(files))) 
+    for idx, filename in enumerate(tqdm(files)):
 
-    print("Writing data to {0}...".format(targetFile))
-    with open(targetFile, 'wb') as fid:
-        data.T.tofile(fid)
-    del data
+        data = read_data(filename)
+
+        if idx == 0:
+            target = np.memmap(targetFilename, mode='w+', shape=(data.size,len(files)),
+                               dtype=headers[0]["dForm"])
+    
+        if args.remove_median:
+            data -= np.median(data, keepdims=True).astype(data.dtype)
+
+        target[:,idx] = data
+    
 
     # write info file
-    headers = [read_header(f) for f in files]
     info = {
         "originalFiles": basenames,
         "samplingRate": headers[0]["Fs"],
@@ -139,13 +149,18 @@ if __name__ == "__main__":
         "numberOfChannels": len(basenames),
         "mergedBy": getuser(),
         "mergeTime": str(datetime.datetime.now()),
-        "md5sum": md5sum(targetFile)
+        "md5sum": md5sum(targetFilename),
+        "channelMedianSubtracted": args.remove_median
     }
+    
     jsonFile = os.path.join(datadir, sharedBasename[0] + '.json')
     print('Writing info file to {0}...'.format(jsonFile))
     with open(jsonFile, 'w') as fid:
         json.dump(info, fid, indent=4)
     print("")
+
+
+    
 
 
 
