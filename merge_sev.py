@@ -3,14 +3,11 @@
 # @Author: Joscha Schmiedt
 # @Date:   2019-02-04 14:45:08
 # @Last Modified by:   Joscha Schmiedt
-# @Last Modified time: 2019-02-11 11:58:47
+# @Last Modified time: 2019-08-26 10:00:03
 #
-# merge_sev.py - Merge separate SEV files into one headerless DAT file
+# merge_sev.py - Merge separate TDT SEV files into one headerless DAT file
 #
 #
-# TODO  
-# * Currently all channels are loaded into memory. This doesn't work fo
-#   arbitrary data lengths and will be enhanced in a later version
 
 
 from __future__ import division, print_function
