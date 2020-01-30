@@ -5,7 +5,7 @@
 # @Last Modified by:   Joscha Schmiedt
 # @Last Modified time: 2019-08-26 10:00:03
 #
-# merge_sev.py - Merge separate TDT SEV files into one headerless DAT file
+# merge_sev.py - Merge separate TDT SEV files into one HDF5 file
 #
 #
 
@@ -20,12 +20,14 @@ from sys import exit
 import json
 from getpass import getuser
 import datetime
-from tqdm import tqdm
+from tqdm.auto import tqdm
+import h5py
 
-HEADERSIZE = 40; # bytes
+HEADERSIZE = 40 # bytes
 ALLOWED_FORMATS = ('single','int32','int16','int8','double','int64')
 
-def read_header(filename):    
+def read_header(filename):
+    """Read the header of a TDT SEV file created by the RS4 streamer"""
     header = {}
     
     with open(filename, 'rb') as f:
@@ -36,8 +38,7 @@ def read_header(filename):
             header['eventName']  = f.read(4).decode('utf-8')
             if header['fileVersion'] == 2:
                 header['eventName'] = header['eventName'][::-1]
-                
-                
+                                
             header['channelNum'] = int.from_bytes(f.read(2), byteorder='little', signed=False)
             header['totalNumChannels'] = int.from_bytes(f.read(2), byteorder='little', signed=False)
             header['sampleWidthBytes'] = int.from_bytes(f.read(2), byteorder='little', signed=False)
@@ -49,9 +50,14 @@ def read_header(filename):
             
         if header['fileVersion'] > 0:
             header['Fs'] = 2**(rate)*25000000/(2**12)/decimate
+        else:
+            header['Fs'] = 0
+            
         return header
         
 def read_data(filename):
+    """Read data from a TDT SEV file created by the RS4 streamer"""
+
     h = read_header(filename)
     with open(filename, 'rb') as f:
         f.seek(HEADERSIZE)
@@ -59,11 +65,17 @@ def read_data(filename):
     return data  
 
 def natural_sort(l): 
+    """Sort a list of strings using numbers
+    
+    Ch1 will be followed by Ch2 and not Ch11.
+    
+    """
     convert = lambda text: int(text) if text.isdigit() else text.lower() 
     alphanum_key = lambda key: [ convert(c) for c in re.split('([0-9]+)', key) ] 
     return sorted(l, key=alphanum_key)
 
 def get_filenames():
+    """Simple file dialog to select SEV files"""
     from tkinter import Tk
     from tkinter.filedialog import askopenfilenames
     Tk().withdraw() 
@@ -83,8 +95,7 @@ def all_elements_equal(elements):
 
 
 if __name__ == "__main__":
-
-    # Short description of the program
+    
     desc = "Merge multiple SEV files into one headerless DAT file"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('files', type=str, nargs='*')
@@ -92,12 +103,11 @@ if __name__ == "__main__":
                         action="store_true", default=False,
                         help="Do not sort channels using natural sorting (default: False)")
     parser.add_argument("-m", "--remove-median",
-                        action="store_true", default=True,
-                        help="Subtract median offset of each channel (default: True)")
-
-
-
-    # Parse CL-arguments - abort if things get wonky
+                        action="store_true", default=False,
+                        help="Subtract median offset of each channel (default: False)")
+    parser.add_argument("--channels-at-once", type=int, default=32, 
+                        help="Channels/files to read/write at once")
+     
     args = parser.parse_args()
 
     if not args.files:
@@ -122,24 +132,59 @@ if __name__ == "__main__":
    
     headers = [read_header(f) for f in files]
 
-    targetFilename = os.path.join(datadir, sharedBasename[0] + '.dat')
-    print("Merging {0} files...".format(len(files))) 
-    for idx, filename in enumerate(tqdm(files)):
+    targetFilename = os.path.join(datadir, sharedBasename[0] + '.hdf5')
+    with h5py.File(targetFilename, 'w') as targetFile:
+                
+        idxStartStop = [np.clip(np.array((jj, jj+args.channels_at_once)), 
+                                a_min=None, a_max=len(files)) 
+                        for jj in range(0,len(files),args.channels_at_once)]                 
+        print("Merging {0} files in {1} chunks a {2} channels into \n   {3}".format(
+              len(files), len(idxStartStop), args.channels_at_once, 
+              targetFilename))
+        for (start, stop) in tqdm(iterable=idxStartStop, desc="chunk", unit="chunk"): 
+            data = [read_data(files[jj]) for jj in range(start, stop)]
+            data = np.vstack(data).T           
+            if start == 0:
+                target = targetFile.create_dataset("data",
+                                                   shape=(data.shape[0], len(files)),
+                                                   dtype=headers[0]["dForm"])
+        
+            if args.remove_median:
+                data -= np.median(data, keepdims=True).astype(data.dtype)                        
 
-        data = read_data(filename)
+            target[:, start:stop] = data
+            
+        # trialdefinition = targetFile.create_dataset("trialdefinition",
+        #                                         shape=(1, 3),
+        #                                         dtype=np.uint64)
+        # trialdefinition[:] = np.array([0, target.shape[0], 0])
+           
+        info = {
+            "filename" : targetFilename,
+            "dataclass" : "AnalogData",
+            "data_dtype" : headers[0]["dForm"],
+            "data_shape" : target.shape,
+            "data_offset" : target.id.get_offset(),
+            # "trl_dtype" : trialdefinition.dtype.name,
+            # "trl_shape" : trialdefinition.shape,
+            # "trl_offset" : trialdefinition.id.get_offset(),
+            "order" : "C",
+            "dimord" : ["time", "channel"],                    
+            "samplerate" : headers[0]["Fs"],
+            "channel" : ["channel_{:03d}".format(iChannel) 
+                         for iChannel in range(1, len(files))],
+            "_version" : "0.1a",
+            "_log" : ""
+        }
+                        
+        targetFile.attrs["_log"] = info["_log"]
+        targetFile.attrs["_version"] = info["_version"]
+        targetFile.attrs["channel"] = info["channel"]
+        targetFile.attrs["samplerate"] = info["samplerate"]
 
-        if idx == 0:
-            target = np.memmap(targetFilename, mode='w+', shape=(data.size,len(files)),
-                               dtype=headers[0]["dForm"])
-    
-        if args.remove_median:
-            data -= np.median(data, keepdims=True).astype(data.dtype)
-
-        target[:,idx] = data
-    
-
+        
     # write info file
-    info = {
+    info["cfg"] = {
         "originalFiles": basenames,
         "samplingRate": headers[0]["Fs"],
         "dtype": headers[0]["dForm"], 
@@ -149,18 +194,9 @@ if __name__ == "__main__":
         "md5sum": md5sum(targetFilename),
         "channelMedianSubtracted": args.remove_median
     }
+
     
-    jsonFile = os.path.join(datadir, sharedBasename[0] + '.json')
+    jsonFile = os.path.join(datadir, sharedBasename[0] + '.info')
     print('Writing info file to {0}...'.format(jsonFile))
     with open(jsonFile, 'w') as fid:
         json.dump(info, fid, indent=4)
-    print("")
-
-
-    
-
-
-
-
-    
-
