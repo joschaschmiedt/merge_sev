@@ -96,7 +96,7 @@ def all_elements_equal(elements):
 
 if __name__ == "__main__":
     
-    desc = "Merge multiple SEV files into one headerless DAT file"
+    desc = "Merge multiple SEV files into one HDF5 file (2048 byte header)"
     parser = argparse.ArgumentParser(description=desc)
     parser.add_argument('files', type=str, nargs='*')
     parser.add_argument("-n", "--no-natural-sort",
