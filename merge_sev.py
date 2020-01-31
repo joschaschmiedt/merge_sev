@@ -107,6 +107,8 @@ if __name__ == "__main__":
                         help="Subtract median offset of each channel (default: False)")
     parser.add_argument("--channels-at-once", type=int, default=32, 
                         help="Channels/files to read/write at once")
+    parser.add_argument("--output-dir", type=str, 
+                        help="Output directory for merged file")
      
     args = parser.parse_args()
 
@@ -116,12 +118,22 @@ if __name__ == "__main__":
             exit()
     else:
         files = args.files
+        
 
     files = [os.path.abspath(x) for x in files]    
     if not args.no_natural_sort:
         files = natural_sort(files)
     
     datadir = os.path.dirname(files[0])
+    
+    if not args.output_dir:
+        outputdir = datadir
+    else:
+        outputdir = args.output_dir
+    
+    if not os.path.isdir(outputdir):
+        raise IOError("{0} is not a valid output directory".format(outputdir))
+    
     basenames = [os.path.basename(x) for x in files]
     sharedBasename = [x[:re.search("_[Cc]h.*\.sev", x).start()] for x in basenames]
     if not all_elements_equal(sharedBasename):
@@ -132,7 +144,7 @@ if __name__ == "__main__":
    
     headers = [read_header(f) for f in files]
 
-    targetFilename = os.path.join(datadir, sharedBasename[0] + '.hdf5')
+    targetFilename = os.path.join(outputdir, sharedBasename[0] + '.hdf5')
     with h5py.File(targetFilename, 'w') as targetFile:
                 
         idxStartStop = [np.clip(np.array((jj, jj+args.channels_at_once)), 
@@ -153,7 +165,8 @@ if __name__ == "__main__":
                 data -= np.median(data, keepdims=True).astype(data.dtype)                        
 
             target[:, start:stop] = data
-            
+        
+        # trialdefinition is a dataset necessary for Syncopy    
         # trialdefinition = targetFile.create_dataset("trialdefinition",
         #                                         shape=(1, 3),
         #                                         dtype=np.uint64)
@@ -196,7 +209,7 @@ if __name__ == "__main__":
     }
 
     
-    jsonFile = os.path.join(datadir, sharedBasename[0] + '.info')
+    jsonFile = os.path.join(outputdir, sharedBasename[0] + '.info')
     print('Writing info file to {0}...'.format(jsonFile))
     with open(jsonFile, 'w') as fid:
         json.dump(info, fid, indent=4)
